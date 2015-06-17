@@ -1,7 +1,9 @@
 'use strict';
 
 angular.module('i18n', [])
-    .factory('translationService', function ($log, $q, $http) {
+.factory('translation', [
+    '$log', '$q', '$http',
+    function ($log, $q, $http) {
         var currentLanguage = null;
         var translations = {};
         var languagePromise = null;
@@ -28,7 +30,7 @@ angular.module('i18n', [])
         };
 
         var isValidTranslationUrl = function (translationUrl) {
-            return isStringValue(language);
+            return isStringValue(translationUrl);
         };
 
         return {
@@ -37,7 +39,7 @@ angular.module('i18n', [])
                 if (isValidLanguage(language)) {
                     deferred.resolve(language);
                 } else {
-                    deferred.reject('Invalid language. It must be a non empty string.');
+                    deferred.reject('Invalid language. It must be a non empty string');
                 }
                 languagePromise = deferred.promise;
 
@@ -46,9 +48,9 @@ angular.module('i18n', [])
             translation: function (language, translation) {
                 var deferred = $q.defer();
                 if (!isValidLanguage(language)) {
-                    deferred.reject('Invalid language. It must be a non empty string.');
+                    deferred.reject('Invalid language. It must be a non empty string');
                 } else if (!isValidTranslation(translation)) {
-                    deferred.reject('Invalid translation. It must be a non empty object.')
+                    deferred.reject('Invalid translation. It must be a non empty object')
                 } else {
                     deferred.resolve({language: language, translation: translation});
                 }
@@ -59,9 +61,9 @@ angular.module('i18n', [])
             translationUrl: function (language, translationUrl) {
                 var deferred = $q.defer();
                 if (!isValidLanguage(language)) {
-                    deferred.reject('Invalid language. It must be a non empty string.');
+                    deferred.reject('Invalid language. It must be a non empty string');
                 } else if (!isValidTranslationUrl(translationUrl)) {
-                    deferred.reject('Invalid translation URL. It must be a non empty URL string.')
+                    deferred.reject('Invalid translation URL. It must be a non empty URL string')
                 } else {
                     $http({
                         method: 'GET',
@@ -72,12 +74,12 @@ angular.module('i18n', [])
                     }).then(function (data) {
                         var translation = angular.fromJson(data);// TODO process fromJson possible errors
 
-                        if(isValidTranslation(translation)) {
+                        if (isValidTranslation(translation)) {
                             deferred.resolve({language: language, translation: translation});
                         } else {
                             deferred.reject('Invalid translation fetched from "' + translationUrl + '"');
                         }
-                    }, function(cause) {
+                    }, function (cause) {
                         deferred.reject('Error fetching translation from "' + translationUrl + '"');
                     });
                 }
@@ -86,29 +88,53 @@ angular.module('i18n', [])
                 return this;
             },
             configure: function () {
-                //TODO validations
-                //TODO implement using promises in sequence
+                if (!languagePromise || translationPromises.length === 0) {
+                    $log.error('i18n not properly configured. The language and at least one translation must be set.');
+                } else {
+                    var promise = $q.when(null);
+                    translationPromises.forEach(function (translationPromise) {
+                        promise = promise.then(function () {
+                            return translationPromise.then(function (data) {
+                                //TODO log
+                                translations[data.language] = data.translation;
+                            }, function (cause) {
+                                $log.error('Error: ' + cause);
+                            });
+                        });
+                    });
+                    promise.then(function () {
+                        return languagePromise.then(function (language) {
+                            //TODO log
+                            currentLanguage = language;
+                        }, function (cause) {
+                            $log.error('Error: ' + cause);
+                        });
+                    }).finally(function () {
+                        languagePromise = null;
+                        translationPromises = [];
+                    });
+                }
             },
             translate: function (label, parameters) {
-                if(!isValidLabel(label)) {
-                    $log.error('Invalid label');
+                if (!isValidLabel(label)) {
+                    $log.error('Invalid label.');
                     return '';
                 }
 
-                if(!currentLanguage) {
-                    $log.error('The current language is not configured');
+                if (!currentLanguage) {
+                    $log.error('The current language is not configured.');
                     return label;
                 }
 
                 if (!translations[currentLanguage] || !translations[currentLanguage][label]) {
-                    $log.error('No message found for label "' + label + '"');
+                    $log.error('No message found for label "' + label + '".');
                     return label;
                 }
 
                 var value = translations[currentLanguage][label];
                 if (parameters) {
-                    if(!isValidParameters(parameters)) {
-                        $log.error('Invalid parameters for label "' + label + '"');
+                    if (!isValidParameters(parameters)) {
+                        $log.error('Invalid parameters for label "' + label + '".');
                         return value;
                     }
 
@@ -121,9 +147,11 @@ angular.module('i18n', [])
                 return value;
             }
         };
-    })
-    .filter('translate', function (translationService) {
+    }])
+.filter('translate', [
+    'translation',
+    function (translation) {
         return function (label, parameters) {
-            return translationService.translate(label, parameters);
+            return translation.translate(label, parameters);
         };
-    });
+    }]);
