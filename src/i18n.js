@@ -8,6 +8,7 @@ angular.module('i18n', [])
         var translations = {};
         var languagePromise = null;
         var translationPromises = [];
+        var configurationPromise = null;
 
         var isStringValue = function (value) {
             return value && typeof value === 'string' && value !== '';
@@ -36,17 +37,20 @@ angular.module('i18n', [])
         return {
             language: function (language) {
                 var deferred = $q.defer();
+                languagePromise = deferred.promise;
+
                 if (isValidLanguage(language)) {
                     deferred.resolve(language);
                 } else {
                     deferred.reject('Invalid language. It must be a non empty string');
                 }
-                languagePromise = deferred.promise;
 
                 return this;
             },
             translation: function (language, translation) {
                 var deferred = $q.defer();
+                translationPromises.push(deferred.promise);
+
                 if (!isValidLanguage(language)) {
                     deferred.reject('Invalid language. It must be a non empty string');
                 } else if (!isValidTranslation(translation)) {
@@ -54,12 +58,13 @@ angular.module('i18n', [])
                 } else {
                     deferred.resolve({language: language, translation: translation});
                 }
-                translationPromises.push(deferred.promise);
 
                 return this;
             },
             translationUrl: function (language, translationUrl) {
                 var deferred = $q.defer();
+                translationPromises.push(deferred.promise);
+
                 if (!isValidLanguage(language)) {
                     deferred.reject('Invalid language. It must be a non empty string');
                 } else if (!isValidTranslationUrl(translationUrl)) {
@@ -83,11 +88,13 @@ angular.module('i18n', [])
                         deferred.reject('Error fetching translation from "' + translationUrl + '"');
                     });
                 }
-                translationPromises.push(deferred.promise);
 
                 return this;
             },
             configure: function () {
+                var deferred = $q.defer();
+                configurationPromise = deferred.promise;
+
                 var promise = $q.when(null);
                 if (languagePromise) {
                     promise = promise.then(function () {
@@ -115,45 +122,72 @@ angular.module('i18n', [])
                     //TODO log
                     languagePromise = null;
                     translationPromises = [];
+                    deferred.resolve();
                 });
             },
             translate: function (label, parameters) {
-                if (!isValidLabel(label)) {
-                    $log.error('Invalid label.');
+                if (!configurationPromise) {
+                    $log.error('i18n not configured.');
                     return '';
                 }
 
-                if (!currentLanguage) {
-                    $log.error('The current language is not configured.');
-                    return label;
-                }
-
-                if (!translations[currentLanguage] || !translations[currentLanguage][label]) {
-                    $log.error('No message found for label "' + label + '".');
-                    return label;
-                }
-
-                var value = translations[currentLanguage][label];
-                if (parameters) {
-                    if (!isValidParameters(parameters)) {
-                        $log.error('Invalid parameters for label "' + label + '".');
-                        return value;
+                return configurationPromise.then(function () {
+                    if (!isValidLabel(label)) {
+                        $log.error('Invalid label.');
+                        return '';
                     }
 
-                    var regExp;
-                    for (var i = 0; i < parameters.length; i++) {
-                        regExp = new RegExp('\\{' + i + '\\}', 'g');
-                        value = value.replace(regExp, parameters[i]);
+                    if (!currentLanguage) {
+                        $log.error('The current language is not configured.');
+                        return label;
                     }
-                }
-                return value;
+
+                    if (!translations[currentLanguage] || !translations[currentLanguage][label]) {
+                        $log.error('No message found for label "' + label + '".');
+                        return label;
+                    }
+
+                    var value = translations[currentLanguage][label];
+                    if (parameters) {
+                        if (!isValidParameters(parameters)) {
+                            $log.error('Invalid parameters for label "' + label + '".');
+                            return value;
+                        }
+
+                        var regExp;
+                        for (var i = 0; i < parameters.length; i++) {
+                            regExp = new RegExp('\\{' + i + '\\}', 'g');
+                            value = value.replace(regExp, parameters[i]);
+                        }
+                    }
+
+                    return value;
+                });
             }
         };
-    }])
-.filter('translate', [
+    }
+])
+.directive('i18n', [
     'translation',
     function (translation) {
-        return function (label, parameters) {
-            return translation.translate(label, parameters);
+        var controller = function ($scope) {
+            $scope.message = '{{ i18n }}';
+
+            translation.translate($scope.key, $scope.params())
+                .then(function (messageValue) {
+                    $scope.message = messageValue;
+                });
         };
-    }]);
+
+        return {
+            restrict: 'E',
+            replace: true,
+            scope: {
+                key: '@',
+                params: '&'
+            },
+            controller: controller,
+            template: '<span>{{ message }}</span>'
+        };
+    }
+]);
