@@ -170,14 +170,14 @@ angular.module('i18n', [])
 .directive('i18n', [
     'translation',
     function (translation) {
-        var controller = function ($scope) {
+        var controller = ['$scope', function ($scope) {
             $scope.message = '{{ i18n }}';
 
             translation.translate($scope.key, $scope.params())
                 .then(function (messageValue) {
                     $scope.message = messageValue;
                 });
-        };
+        }];
 
         return {
             restrict: 'E',
