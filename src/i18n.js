@@ -10,6 +10,8 @@ angular.module('i18n', [])
         var translationPromises = [];
         var configurationPromise = null;
 
+        var extendFlagDefaultValue = false;
+
         var isStringValue = function (value) {
             return value && typeof value === 'string' && value !== '';
         };
@@ -34,6 +36,10 @@ angular.module('i18n', [])
             return isStringValue(translationUrl);
         };
 
+        var isValidExtendFlag = function (extend) {
+            return extend === undefined || (extend !== null && typeof extend === 'boolean');
+        };
+
         return {
             language: function (language) {
                 var deferred = $q.defer();
@@ -42,33 +48,37 @@ angular.module('i18n', [])
                 if (isValidLanguage(language)) {
                     deferred.resolve(language);
                 } else {
-                    deferred.reject('Invalid language. It must be a non empty string');
+                    deferred.reject('Invalid language "' + language + '". It must be a non empty string');
                 }
 
                 return this;
             },
-            translation: function (language, translation) {
+            translation: function (language, translation, extend) {
                 var deferred = $q.defer();
                 translationPromises.push(deferred.promise);
 
                 if (!isValidLanguage(language)) {
-                    deferred.reject('Invalid language. It must be a non empty string');
+                    deferred.reject('Invalid language "' + language + '". It must be a non empty string');
                 } else if (!isValidTranslation(translation)) {
                     deferred.reject('Invalid translation. It must be a non empty object')
+                } else if (!isValidExtendFlag(extend)) {
+                    deferred.reject('Invalid extend option. It must be a boolean value or undefined')
                 } else {
-                    deferred.resolve({language: language, translation: translation});
+                    deferred.resolve({language: language, translation: translation, extend: extend});
                 }
 
                 return this;
             },
-            translationUrl: function (language, translationUrl) {
+            translationUrl: function (language, translationUrl, extend) {
                 var deferred = $q.defer();
                 translationPromises.push(deferred.promise);
 
                 if (!isValidLanguage(language)) {
-                    deferred.reject('Invalid language. It must be a non empty string');
+                    deferred.reject('Invalid language "' + language + '". It must be a non empty string');
                 } else if (!isValidTranslationUrl(translationUrl)) {
-                    deferred.reject('Invalid translation URL. It must be a non empty URL string')
+                    deferred.reject('Invalid translation URL "' + translationUrl + '". It must be a non empty URL string')
+                } else if (!isValidExtendFlag(extend)) {
+                    deferred.reject('Invalid extend option. It must be a boolean value or undefined')
                 } else {
                     $http({
                         method: 'GET',
@@ -80,7 +90,7 @@ angular.module('i18n', [])
                         var translation = response.data;
 
                         if (isValidTranslation(translation)) {
-                            deferred.resolve({language: language, translation: translation});
+                            deferred.resolve({language: language, translation: translation, extend: extend});
                         } else {
                             deferred.reject('Invalid translation fetched from "' + translationUrl + '"');
                         }
@@ -94,6 +104,7 @@ angular.module('i18n', [])
             configure: function () {
                 var deferred = $q.defer();
                 configurationPromise = deferred.promise;
+                var hasErrors = false;
 
                 var promise = $q.when(null);
                 if (languagePromise) {
@@ -111,7 +122,12 @@ angular.module('i18n', [])
                         promise = promise.then(function () {
                             return translationPromise.then(function (data) {
                                 //TODO log
-                                translations[data.language] = data.translation;
+                                var extend = data.extend || extendFlagDefaultValue;
+                                if(extend) {
+                                    translations[data.language] = angular.extend({}, translations[data.language], data.translation);
+                                } else {
+                                    translations[data.language] = data.translation;
+                                }
                             }, function (cause) {
                                 $log.error(cause);
                             });
@@ -127,31 +143,26 @@ angular.module('i18n', [])
             },
             translate: function (label, parameters) {
                 if (!configurationPromise) {
-                    $log.error('i18n not configured.');
-                    return '';
+                    return $q.reject('i18n not configured.');
                 }
 
                 return configurationPromise.then(function () {
                     if (!isValidLabel(label)) {
-                        $log.error('Invalid label.');
-                        return '';
+                        return $q.reject('Invalid label.');
                     }
 
                     if (!currentLanguage) {
-                        $log.error('The current language is not configured.');
-                        return label;
+                        return $q.reject('The current language is not configured.');
                     }
 
                     if (!translations[currentLanguage] || !translations[currentLanguage][label]) {
-                        $log.error('No message found for label "' + label + '".');
-                        return label;
+                        return $q.reject('No message found for label "' + label + '".');
                     }
 
                     var value = translations[currentLanguage][label];
                     if (parameters) {
                         if (!isValidParameters(parameters)) {
-                            $log.error('Invalid parameters for label "' + label + '".');
-                            return value;
+                            return $q.reject('Invalid parameters for label "' + label + '".');
                         }
 
                         var regExp;
