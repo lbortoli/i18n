@@ -60,9 +60,9 @@ angular.module('i18n', [])
                 if (!isValidLanguage(language)) {
                     deferred.reject('Invalid language "' + language + '". It must be a non empty string');
                 } else if (!isValidTranslation(translation)) {
-                    deferred.reject('Invalid translation. It must be a non empty object')
+                    deferred.reject('Invalid translation. It must be a non empty object');
                 } else if (!isValidExtendFlag(extend)) {
-                    deferred.reject('Invalid extend option. It must be a boolean value or undefined')
+                    deferred.reject('Invalid extend option. It must be a boolean value or undefined');
                 } else {
                     deferred.resolve({language: language, translation: translation, extend: extend});
                 }
@@ -76,9 +76,9 @@ angular.module('i18n', [])
                 if (!isValidLanguage(language)) {
                     deferred.reject('Invalid language "' + language + '". It must be a non empty string');
                 } else if (!isValidTranslationUrl(translationUrl)) {
-                    deferred.reject('Invalid translation URL "' + translationUrl + '". It must be a non empty URL string')
+                    deferred.reject('Invalid translation URL "' + translationUrl + '". It must be a non empty URL string');
                 } else if (!isValidExtendFlag(extend)) {
-                    deferred.reject('Invalid extend option. It must be a boolean value or undefined')
+                    deferred.reject('Invalid extend option. It must be a boolean value or undefined');
                 } else {
                     $http({
                         method: 'GET',
@@ -110,10 +110,11 @@ angular.module('i18n', [])
                 if (languagePromise) {
                     promise = promise.then(function () {
                         return languagePromise.then(function (language) {
-                            //TODO log
                             currentLanguage = language;
+                            deferred.notify('Current language set to \'' + currentLanguage + '\'.');
                         }, function (cause) {
-                            $log.error(cause);
+                            hasErrors = true;
+                            deferred.notify(cause);
                         });
                     });
                 }
@@ -121,25 +122,32 @@ angular.module('i18n', [])
                     translationPromises.forEach(function (translationPromise) {
                         promise = promise.then(function () {
                             return translationPromise.then(function (data) {
-                                //TODO log
                                 var extend = data.extend || extendFlagDefaultValue;
                                 if(extend) {
                                     translations[data.language] = angular.extend({}, translations[data.language], data.translation);
+                                    deferred.notify('Translation extended for language \'' + data.language + '\'.');
                                 } else {
                                     translations[data.language] = data.translation;
+                                    deferred.notify('New translation set for language \'' + data.language + '\'.');
                                 }
                             }, function (cause) {
-                                $log.error(cause);
+                                hasErrors = true;
+                                deferred.notify(cause);
                             });
                         });
                     });
                 }
                 promise.finally(function () {
-                    //TODO log
                     languagePromise = null;
                     translationPromises = [];
-                    deferred.resolve();
+                    if (hasErrors) {
+                        deferred.reject();
+                    } else {
+                        deferred.resolve();
+                    }
                 });
+                
+                return configurationPromise;
             },
             translate: function (label, parameters) {
                 if (!configurationPromise) {
