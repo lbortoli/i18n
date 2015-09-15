@@ -2,15 +2,14 @@
 
 angular.module('i18n', [])
 .factory('translation', [
-    '$log', '$q', '$http',
-    function ($log, $q, $http) {
+    '$q', '$http',
+    function ($q, $http) {
         var currentLanguage = null;
         var translations = {};
         var languagePromise = null;
         var translationPromises = [];
-        var configurationPromise = null;
 
-        var extendFlagDefaultValue = false;
+        var EXTEND_FLAG_DEFAULT_VALUE = false;
 
         var isStringValue = function (value) {
             return value && typeof value === 'string' && value !== '';
@@ -40,6 +39,10 @@ angular.module('i18n', [])
             return extend === undefined || (extend !== null && typeof extend === 'boolean');
         };
 
+        var isValidValue = function (value) {
+            return isStringValue(value);
+        };
+
         return {
             language: function (language) {
                 var deferred = $q.defer();
@@ -48,7 +51,7 @@ angular.module('i18n', [])
                 if (isValidLanguage(language)) {
                     deferred.resolve(language);
                 } else {
-                    deferred.reject('Invalid language "' + language + '". It must be a non empty string');
+                    deferred.reject('Invalid language "' + language + '". It must be a non empty string.');
                 }
 
                 return this;
@@ -58,11 +61,11 @@ angular.module('i18n', [])
                 translationPromises.push(deferred.promise);
 
                 if (!isValidLanguage(language)) {
-                    deferred.reject('Invalid language "' + language + '". It must be a non empty string');
+                    deferred.reject('Invalid language "' + language + '". It must be a non empty string.');
                 } else if (!isValidTranslation(translation)) {
-                    deferred.reject('Invalid translation. It must be a non empty object');
+                    deferred.reject('Invalid translation. It must be a non empty object.');
                 } else if (!isValidExtendFlag(extend)) {
-                    deferred.reject('Invalid extend option. It must be a boolean value or undefined');
+                    deferred.reject('Invalid extend option. It must be a boolean value or undefined.');
                 } else {
                     deferred.resolve({language: language, translation: translation, extend: extend});
                 }
@@ -74,11 +77,11 @@ angular.module('i18n', [])
                 translationPromises.push(deferred.promise);
 
                 if (!isValidLanguage(language)) {
-                    deferred.reject('Invalid language "' + language + '". It must be a non empty string');
+                    deferred.reject('Invalid language "' + language + '". It must be a non empty string.');
                 } else if (!isValidTranslationUrl(translationUrl)) {
-                    deferred.reject('Invalid translation URL "' + translationUrl + '". It must be a non empty URL string');
+                    deferred.reject('Invalid translation URL "' + translationUrl + '". It must be a non empty URL string.');
                 } else if (!isValidExtendFlag(extend)) {
-                    deferred.reject('Invalid extend option. It must be a boolean value or undefined');
+                    deferred.reject('Invalid extend option. It must be a boolean value or undefined.');
                 } else {
                     $http({
                         method: 'GET',
@@ -92,10 +95,10 @@ angular.module('i18n', [])
                         if (isValidTranslation(translation)) {
                             deferred.resolve({language: language, translation: translation, extend: extend});
                         } else {
-                            deferred.reject('Invalid translation fetched from "' + translationUrl + '"');
+                            deferred.reject('Invalid translation fetched from "' + translationUrl + '".');
                         }
                     }, function () {
-                        deferred.reject('Error fetching translation from "' + translationUrl + '"');
+                        deferred.reject('Error fetching translation from "' + translationUrl + '".');
                     });
                 }
 
@@ -103,7 +106,7 @@ angular.module('i18n', [])
             },
             configure: function () {
                 var deferred = $q.defer();
-                configurationPromise = deferred.promise;
+                var configurationPromise = deferred.promise;
                 var hasErrors = false;
 
                 var promise = $q.when(null);
@@ -111,7 +114,7 @@ angular.module('i18n', [])
                     promise = promise.then(function () {
                         return languagePromise.then(function (language) {
                             currentLanguage = language;
-                            deferred.notify('Current language set to \'' + currentLanguage + '\'.');
+                            deferred.notify('Current language set to "' + currentLanguage + '".');
                         }, function (cause) {
                             hasErrors = true;
                             deferred.notify(cause);
@@ -122,13 +125,13 @@ angular.module('i18n', [])
                     translationPromises.forEach(function (translationPromise) {
                         promise = promise.then(function () {
                             return translationPromise.then(function (data) {
-                                var extend = data.extend || extendFlagDefaultValue;
-                                if(extend) {
+                                var extend = data.extend || EXTEND_FLAG_DEFAULT_VALUE;
+                                if (extend) {
                                     translations[data.language] = angular.extend({}, translations[data.language], data.translation);
-                                    deferred.notify('Translation extended for language \'' + data.language + '\'.');
+                                    deferred.notify('Translation extended for language "' + data.language + '".');
                                 } else {
                                     translations[data.language] = data.translation;
-                                    deferred.notify('New translation set for language \'' + data.language + '\'.');
+                                    deferred.notify('New translation set for language "' + data.language + '".');
                                 }
                             }, function (cause) {
                                 hasErrors = true;
@@ -141,20 +144,16 @@ angular.module('i18n', [])
                     languagePromise = null;
                     translationPromises = [];
                     if (hasErrors) {
-                        deferred.reject();
+                        deferred.reject();// TODO: check if passing a value is needed in the future
                     } else {
-                        deferred.resolve();
+                        deferred.resolve();// TODO: check if passing a value is needed in the future
                     }
                 });
-                
+
                 return configurationPromise;
             },
             translate: function (label, parameters) {
-                if (!configurationPromise) {
-                    return $q.reject('i18n not configured.');
-                }
-
-                return configurationPromise.then(function () {
+                return this.configure().then(function () {
                     if (!isValidLabel(label)) {
                         return $q.reject('Invalid label.');
                     }
@@ -168,6 +167,10 @@ angular.module('i18n', [])
                     }
 
                     var value = translations[currentLanguage][label];
+                    if (!isValidValue(value)) {
+                        return $q.reject('Invalid value for label "' + label + '" and language "' + currentLanguage + '". It must be a non empty string.');
+                    }
+
                     if (parameters) {
                         if (!isValidParameters(parameters)) {
                             return $q.reject('Invalid parameters for label "' + label + '".');
@@ -181,6 +184,8 @@ angular.module('i18n', [])
                     }
 
                     return value;
+                }, function () {
+                    return $q.reject('i18n not configured.');
                 });
             }
         };
