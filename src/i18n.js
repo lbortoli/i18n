@@ -1,7 +1,7 @@
 'use strict';
 
 angular.module('i18n', [])
-.factory('translation', [
+.factory('i18n', [
     '$q', '$http',
     function ($q, $http) {
         var currentLanguage = null;
@@ -106,7 +106,7 @@ angular.module('i18n', [])
             },
             configure: function () {
                 var deferred = $q.defer();
-                var configurationPromise = deferred.promise;
+                var configurePromise = deferred.promise;
                 var hasErrors = false;
 
                 var promise = $q.when(null);
@@ -150,68 +150,76 @@ angular.module('i18n', [])
                     }
                 });
 
-                return configurationPromise;
+                return configurePromise;
             },
             translate: function (label, parameters) {
-                return this.configure().then(function () {
+                var deferred = $q.defer();
+                var translatePromise = deferred.promise;
+
+                this.configure().then(function () {
                     if (!isValidLabel(label)) {
-                        return $q.reject('Invalid label.');
-                    }
+                        deferred.reject('Invalid label.');
+                    } else if (!currentLanguage) {
+                        deferred.reject('The current language is not configured.');
+                    } else if (!translations[currentLanguage] || !translations[currentLanguage][label]) {
+                        deferred.reject('No message found for label "' + label + '".');
+                    } else {
+                        var value = translations[currentLanguage][label];
+                        if (!isValidValue(value)) {
+                            deferred.reject('Invalid value for label "' + label + '" and language "' + currentLanguage + '". It must be a non empty string.');
+                        } else {
+                            if (parameters) {
+                                if (!isValidParameters(parameters)) {
+                                    deferred.reject('Invalid parameters for label "' + label + '".');
+                                }
 
-                    if (!currentLanguage) {
-                        return $q.reject('The current language is not configured.');
-                    }
+                                var regExp;
+                                for (var i = 0; i < parameters.length; i++) {
+                                    regExp = new RegExp('\\{\\s*' + i + '\\s*\\}', 'g');
+                                    value = value.replace(regExp, parameters[i]);
+                                }
+                            }
 
-                    if (!translations[currentLanguage] || !translations[currentLanguage][label]) {
-                        return $q.reject('No message found for label "' + label + '".');
-                    }
-
-                    var value = translations[currentLanguage][label];
-                    if (!isValidValue(value)) {
-                        return $q.reject('Invalid value for label "' + label + '" and language "' + currentLanguage + '". It must be a non empty string.');
-                    }
-
-                    if (parameters) {
-                        if (!isValidParameters(parameters)) {
-                            return $q.reject('Invalid parameters for label "' + label + '".');
-                        }
-
-                        var regExp;
-                        for (var i = 0; i < parameters.length; i++) {
-                            regExp = new RegExp('\\{' + i + '\\}', 'g');
-                            value = value.replace(regExp, parameters[i]);
+                            deferred.resolve(value);
                         }
                     }
-
-                    return value;
                 }, function () {
-                    return $q.reject('i18n not configured.');
+                    deferred.reject('i18n not configured.');
                 });
+
+                return translatePromise;
             }
         };
     }
 ])
 .directive('i18n', [
-    'translation',
-    function (translation) {
-        var controller = ['$scope', function ($scope) {
-            $scope.message = '{{ i18n }}';
-
-            translation.translate($scope.key, $scope.params())
-                .then(function (messageValue) {
-                    $scope.message = messageValue;
-                });
-        }];
-
+    'i18n', '$compile', '$log',
+    function (i18n, $compile, $log) {
         return {
-            restrict: 'E',
-            replace: true,
-            scope: {
-                key: '@',
-                params: '&'
-            },
-            controller: controller,
-            template: '<span>{{ message }}</span>'
+            restrict: 'AC',
+            compile: function (templateElement) {
+                $compile.$$addBindingClass(templateElement);
+                return function (scope, element, attr) {
+                    var onSuccess = function (messageValue) {
+                        element.textContent = messageValue;
+                    };
+                    var onError = function (cause) {
+                        $log.error(cause);
+                    };
+
+                    $compile.$$addBindingInfo(element, attr.i18n);
+                    element = element[0];
+                    i18n.translate(attr.i18n, angular.fromJson(attr.i18nParams)).then(onSuccess, onError);
+
+                    scope.$watch(function () {
+                        return [attr.i18n, attr.i18nParams];
+                    }, function (newValue, oldValue) {
+                        if (!angular.equals(newValue, oldValue)) {
+                            i18n.translate(newValue[0], angular.fromJson(newValue[1])).then(onSuccess, onError);
+                        }
+                    }, true);
+                };
+            }
         };
     }
 ]);
